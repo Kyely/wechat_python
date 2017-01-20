@@ -2,7 +2,7 @@
 """
 wechat cient using web interface
 by 木鱼
-for test
+
 """
 import time
 import requests
