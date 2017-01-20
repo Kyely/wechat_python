@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 wechat cient using web interface
-
+by 木鱼
 """
 import time
 import requests
