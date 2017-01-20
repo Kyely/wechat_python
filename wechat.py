@@ -11,7 +11,7 @@ import shutil
 import xml.dom.minidom
 import json
 import random
-
+from collections import ChainMap
 class WeChat(object):
 	"""wechat web interface Class"""
 	def __init__(self):
@@ -21,12 +21,12 @@ class WeChat(object):
 		self.code = ''
 		self.base_url = ''
 		self.redirect_url = ''
-		self.special_users = []
-		self.public_users_list = []
-		self.special_users_list = []
-		self.group_list = []
-		self.contact_list = []
-		self.current_total_contact = set()
+		self.special_users = ['weixin','filehelper']
+		self.public_users_list = dict()
+		self.special_users_list = dict()
+		self.group_list = dict()
+		self.contact_list = dict()
+		self.all_contact = ChainMap()
 		self.user = ''
 		self.sync_key = ''
 		self.sync_key_for_syn= ''
@@ -38,6 +38,7 @@ class WeChat(object):
 		self.pass_ticket = ''
 		self.base_request = {}
 
+		self.get_icon_base_url = 'https://wx.qq.com'
 		self.set_cookies = 'Set-Cookie'
 		self.deviceId = 'e455251312409684'
 		self.syncheck_url_base = 'https://webpush.wx.qq.com/cgi-bin/mmwebwx-bin/synccheck'
@@ -134,23 +135,24 @@ class WeChat(object):
 		init_payload={'BaseRequest' : self.base_request}    		
 		data_inital = requests.post(url_init, json=init_payload, headers=self.headers,cookies=requests.utils.dict_from_cookiejar(self.jar))
 		self._Cookiesupdata(data_inital)
-		#data_inital_dic = json.loads(data_inital.text.encode('unicode_escape').decode('string_escape'))
 		data_inital_dic=json.loads(data_inital.content.decode('utf-8'))
 		self.user = data_inital_dic['User']
 		self.sync_key = data_inital_dic['SyncKey']
 		self.sync_key_for_syn='|'.join([str(keyVal['Key'])+'_'+str(keyVal['Val']) for keyVal in self.sync_key['List']])
 		init_contaclist = data_inital_dic['ContactList']
-		self.current_total_contact.update([i['UserName'] for i in init_contaclist])
 		for i in range(0,len(init_contaclist),1):
 		    contact= init_contaclist[i]
-		    if  contact['VerifyFlag'] & 8 != 0:
-		        self.public_users_list.append(contact)
-		    elif contact['UserName'] in self.special_users:
-		        self.special_users_list.append(contact)
+		    if contact['UserName'] in self.all_contact.keys():
+		        print("This contact is already in list",contact['UserName'],'Update it ')	    
+		    if contact['UserName'] in self.special_users:
+		        self.special_users_list[contact['UserName']] = contact
+		    elif  contact['VerifyFlag'] & 8 != 0:
+		        self.public_users_list[contact['UserName']] = contact
 		    elif '@@' in contact['UserName']:
-		        self.group_list.append(contact)
+		        self.group_list[contact['UserName']] = contact
 		    else:
-		        self.contact_list.append(contact)
+		        self.contact_list[contact['UserName']] = contact
+		self.all_contact =  ChainMap(self.special_users_list , self.public_users_list , self.contact_list)
 
 	def status_notify(self):
 		url_statusnotify = self.base_url+'/webwxstatusnotify?lang=zh_CN&pass_ticket=%s' % (self.pass_ticket)
@@ -173,19 +175,17 @@ class WeChat(object):
 		member_list = data_contact_dic['MemberList']
 		for i in range(0,len(member_list),1):
 		    contact= member_list[i]
-		    if contact['UserName'] in self.current_total_contact:
-		        print("This contact is already in list",contact['UserName'])
-		        continue
-		    else:
-		        self.current_total_contact.add(contact['UserName'])
-		    if  contact['VerifyFlag'] & 8 != 0:
-		        self.public_users_list.append(contact)
-		    elif contact['UserName'] in self.special_users_list:
-		        self.special_users_list.append(contact)
+		    if contact['UserName'] in self.all_contact.keys():
+		        print("This contact is already in list",contact['UserName'])	        
+		    if contact['UserName'] in self.special_users:
+		        self.special_users_list[contact['UserName']] = contact
+		    elif  contact['VerifyFlag'] & 8 != 0:
+		        self.public_users_list[contact['UserName']] = contact
 		    elif '@@' in contact['UserName']:
-		        self.group_list.append(contact)
+		        self.group_list[contact['UserName']] = contact
 		    else:
-		        self.contact_list.append(contact)
+		        self.contact_list[contact['UserName']] = contact
+		self.all_contact =  ChainMap(self.special_users_list , self.public_users_list , self.contact_list)
 
 	def get_batch_contact(self):
 		url_getbatchcontact = self.base_url + '/webwxbatchgetcontact?pass_ticket=%s&skey=%s&r=%s' % (self.pass_ticket,self.skey,int(time.time()))
@@ -245,4 +245,38 @@ class WeChat(object):
 		                             }
 		                    }
 		data_sendmessage=requests.post(url_sendmessage, data=json.dumps(sendmessage_load,ensure_ascii=False).encode("utf-8"), headers=self.headers,cookies=requests.utils.dict_from_cookiejar(self.jar))
-		self._Cookiesupdata(self.jar,data_sendmessage)		                  
+		self._Cookiesupdata(data_sendmessage)
+
+	def get_icon(self,username):
+		if username not in 	self.all_contact.keys():	         
+			return
+		else:
+			url_get_icon = self.get_icon_base_url + self.all_contact[username]['HeadImgUrl']
+
+		data_icon=requests.get(url_get_icon,stream=True,cookies=requests.utils.dict_from_cookiejar(self.jar))
+		self._Cookiesupdata(data_icon)
+		icon_name = "icon_%s_.jpg" % (self.all_contact[username]['PYInitial'])
+		path_icon = os.path.join(os.getcwd(), icon_name)
+		with open(path_icon , 'wb') as f:
+		    data_icon.raw.decode_content = True
+		    shutil.copyfileobj(data_icon.raw, f)
+		os.startfile(path_icon )
+
+
+
+print(__name__)
+
+if __name__ == '__main__':
+	w=WeChat();
+
+	w.get_uuid()
+	w.get_QR()
+	w.get_redirect_url()
+	w.get_info()
+	w.init_connect()
+	w.status_notify()
+	w.get_contact()
+	w.syn_check()
+	w.web_wx_sync()	
+	w.send_message('哇哇@'+str(int(time.time())))
+	w.get_icon('weixin')
